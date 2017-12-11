@@ -1,0 +1,106 @@
+---
+title: "LDA"
+author: "Shishir Kurhade"
+date: "10 December 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r code}
+
+library(topicmodels)
+library(tidytext)
+library(dplyr)
+library(tidyverse)
+
+business <-
+  read.csv('C:/Users/HP/Desktop/DS 5110 Data Management/Data Sets/business.csv')
+review <-
+  read.csv('C:/Users/HP/Desktop/DS 5110 Data Management/Data Sets/review.csv',nrows = 100000)
+
+
+review1 <- review %>%transmute(business_id = business_id, text = text, useful = useful, review_id = review_id,stars=stars)
+
+
+
+
+review1$text <- as.character(review1$text)
+review1$business_id <- as.character(review1$business_id)
+review1$review_id <- as.character(review1$review_id)
+
+review_words_sep <- review1 %>%
+unnest_tokens(word, text,token="words")%>%anti_join(stop_words)
+
+
+
+
+
+
+ review_words_sep <- review_words_sep %>% group_by(business_id, review_id, word) %>% summarise(total_count =
+n()) %>% filter(business_id %in% c('dKdApYVFDSNYsNOso6NYlA'))
+
+
+
+
+lda_dtm <- review_words_sep %>%
+  cast_dtm(document=review_id,term =  word,value = total_count)
+reviews_lda <- LDA(lda_dtm, k = 2, control = list(seed = 1234))
+
+
+reviews_topic <- tidy(reviews_lda, matrix = "beta")
+
+top_terms <- reviews_topic %>%
+  group_by(topic) %>%
+  top_n(5, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+library(ggplot2)
+
+
+#scores <- scores%>%mutate(term=word)
+
+
+
+
+View(top_terms)
+
+top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+
+
+
+
+library(tidyr)
+
+beta_spread <- reviews_topic %>%
+  mutate(topic = paste0("topic", topic)) %>%
+  spread(topic, beta) %>%
+  filter(topic1 > .001 | topic2 > .001) %>%
+  mutate(log_ratio = log2(topic2 / topic1))
+
+beta_spread
+
+
+
+beta_spread %>%
+  group_by(log_ratio < 0) %>%
+  top_n(15, abs(log_ratio)) %>%
+  ungroup() %>%
+  mutate(word = reorder(term, log_ratio)) %>%
+  ggplot(aes(term, log_ratio, fill = log_ratio < 0)) +
+  geom_col() +
+  coord_flip() +
+  ylab("log odds ratio (David/Julia)") +
+  scale_fill_discrete(name = "", labels = c("Topic1", "Topic2"))
+
+
+```
+```
