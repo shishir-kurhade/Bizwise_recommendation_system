@@ -1,0 +1,446 @@
+---
+title: "Bizwise"
+author: "Shishir Kurhade"
+date: "12/10/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## EDA
+
+To check the level of our tables-
+
+```{r EDA}
+library(tidyverse)
+library(tidytext)
+
+#business <- read.csv("business.csv", na.string = c(""))
+#checkin <- read.csv("checkin.csv")
+
+
+```
+
+```{r}
+#review <- read.csv("review.csv", nrows = 2000000)
+#save(review, file="review.rda")
+load(file = "business.rda")
+load(file = "checkin.rda")
+load(file = "review.rda")
+```
+
+## Business Categorization
+
+```{r business categorization}
+#The business ids are categorized according to the tags present in 'categories' field.
+#The category patterns searched for are present in the Yelp app
+#There are twenty categories of businesses as the final result
+
+
+business <-  business %>%
+  mutate(category = if_else(
+    grepl(pattern = 'Restaurants',
+          x = business$categories) == TRUE,
+    'Restaurant',
+    if_else(
+      grepl(pattern = 'Nightlife', x = business$categories) == TRUE,
+      'Nightlife',
+      if_else(
+        grepl(pattern = 'Shopping', x = business$categories) == TRUE,
+        'Shopping',
+        if_else(
+          grepl(pattern = 'Food', x = business$categories) == TRUE,
+          'Food',
+          if_else(
+            grepl(pattern = 'Health & Medical', x = business$categories) == TRUE,
+            'Health & Medical',
+            if_else(
+              grepl(pattern = 'Beauty & Spas', x = business$categories) == TRUE,
+              'Beauty & Spas',
+              if_else(
+                grepl(pattern = 'Home Services', x = business$categories) == TRUE,
+                'Home Services',
+                if_else(
+                  grepl(pattern = 'Local Services', x = business$categories) == TRUE,
+                  'Local Services',
+                  if_else(
+                    grepl(pattern = 'Event Planning & Services', x = business$categories) ==
+                      TRUE,
+                    'Event Planning & Services',
+                    if_else(
+                      grepl(pattern = 'Arts & Entertainment', x = business$categories) == TRUE,
+                      'Arts & Entertainment',
+                      if_else(
+                        grepl(pattern = 'Active Life', x = business$categories) == TRUE,
+                        'Active Life',
+                        if_else(
+                          grepl(pattern = 'Professiol Services', x = business$categories) == TRUE,
+                          'Professiol Services',
+                          if_else(
+                            grepl(pattern = 'Automotive', x = business$categories) == TRUE,
+                            'Automotive',
+                            if_else(
+                              grepl(pattern = 'Hotel & Travel', x = business$categories) == TRUE,
+                              'Hotel & Travel',
+                              if_else(
+                                grepl(pattern = 'Education', x = business$categories) == TRUE,
+                                'Education',
+                                if_else(
+                                  grepl(pattern = 'Real Estate', x = business$categories) == TRUE,
+                                  'Real Estate',
+                                  if_else(
+                                    grepl(pattern = 'Pets', x = business$categories) == TRUE,
+                                    'Pets',
+                                    if_else(
+                                      grepl(pattern = 'Financial Services', x = business$categories) == TRUE,
+                                      'Financial Services',
+                                      if_else(
+                                        grepl(pattern = 'Local Flavor', x = business$categories) == TRUE,
+                                        'Local Flavor',
+                                        if_else(
+                                          grepl(pattern = 'Public Services & Government', x = business$categories) ==
+                                            TRUE,
+                                          'Public Services & Government',
+                                          if_else(
+                                            grepl(pattern = 'Mass Media', x = business$categories) == TRUE,
+                                            'Mass Media',
+                                            if_else(
+                                              grepl(pattern = 'Religious Organization', x = business$categories) == TRUE,
+                                              'Religious Organization',
+                                              'NA'
+                                            )
+                                          )
+                                        )
+                                      )
+                                    )
+                                  )
+                                )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  ))
+
+#View(business)
+business %>% group_by(category) %>% summarise(c = n()) %>% summarise(total =                                                                        sum(c))
+```
+
+
+```{r}
+#star-wise how many restaurants are there in Las Vegas
+
+fun_graph_star_rating <- function(in_city, in_category)
+{
+  business %>%
+  mutate(stars = as.factor(stars)) %>%
+  filter(city == in_city, category == in_category) %>%
+  ggplot(aes(x = stars)) + geom_bar(aes(fill = stars))
+}
+
+#fun_graph_star_rating("Las Vegas", "Restaurant")
+```
+
+```{r}
+library(ggmap)
+
+fun_map <- function(in_city, in_category, star_rating, top_no)
+{
+  result <- filter(business, city == in_city,
+                   category == in_category,
+                   stars == star_rating) %>%
+    arrange(desc(review_count)) %>%
+    top_n(top_no, business_id)
+  
+  Map1<-qmap(in_city, zoom = 11)
+  
+  Map1 +
+  geom_point(data = result,
+             aes(x = longitude,
+                 y = latitude,
+                 colour = factor(attributes.RestaurantsPriceRange2)), size = 5) +
+    guides(colour = guide_legend(title = 'Price Range'))
+
+}
+
+#fun_map("Las Vegas", "Restaurant", 5, 30)
+  
+```
+
+```{r}
+library("tm")
+library("SnowballC")
+library("wordcloud")
+library("RColorBrewer")
+library(dplyr)
+library(tidytext)
+
+
+#Function to compute wordcloud based on negative reviews
+#Accepts the city,category and star rating as an input
+compute_wordcloud <- function(city_input, star_input, category_input,word_freq,number_word,top_competitors)
+{
+
+  
+  check1 <-
+    transmute(checkin,
+    business_id = business_id,
+    Totalvisits = rowSums(checkin[,-22], na.rm = TRUE))
+    Business <- merge(check1, business, by = 'business_id')
+    
+    #Businesses for category food
+    business_cat <-
+    filter(Business,
+    category == category_input,
+    city == city_input,
+    stars == star_input)
+    
+    #Removing rows with all NAs
+    FB1 <-
+    business_cat[, colSums(is.na(business_cat)) != nrow(business_cat)]
+    
+    #subsetting
+    FB1 <- select(FB1, business_id, Totalvisits, city, category, name, stars)
+    
+    filt_Business <- filter(FB1, city == city_input)
+    a <- arrange(filt_Business,desc(Totalvisits))
+    a <- head(a, n = top_competitors)
+    
+  
+  list_of_bids <-
+    business_cat$business_id 
+    review1 <-
+    review %>% transmute(
+    business_id = business_id,
+    text = text,
+    useful = useful,
+    review_id = review_id,
+    stars = stars
+    ) %>% filter(business_id %in% list_of_bids)
+    review1$text <- as.character(review1$text)
+    
+    review_words <- review1 %>%
+    unnest_tokens(word, text, token = "words")
+    
+    review_words <- review_words %>%
+    anti_join(stop_words)
+    
+    afinn <- get_sentiments("afinn")
+    
+    d <- review_words %>%
+    inner_join(afinn, by = "word")
+    
+    negative_reviews_data <-
+    d %>% group_by(business_id, review_id) %>% summarise(total_score = sum(score)) %>%
+    filter(total_score < 0)
+    
+    review_cus <-
+    review %>% filter(review_id %in% negative_reviews_data$review_id)
+    docs <- Corpus(VectorSource(review_cus$text))
+    #inspect(docs)
+    #Converting to lower case, removing stopwords, punctuation and numbers
+    docs <- tm_map(docs, tolower)
+    #docs <- tm_map(docs, removeWords, c(stopwords("english"),"s","ve"))
+    docs <- tm_map(docs, PlainTextDocument)
+    docs <- tm_map(docs, removeWords, c(city_input))
+    docs <- tm_map(docs, content_transformer(tolower))
+    # Remove numbers
+    docs <- tm_map(docs, removeNumbers)
+    # Remove english common stopwords
+    docs <- tm_map(docs, removeWords, stopwords("english"))
+    # Remove punctuations
+    docs <- tm_map(docs, removePunctuation)
+    # Eliminate extra white spaces
+    docs <- tm_map(docs, stripWhitespace)
+    
+    
+    dtm <- TermDocumentMatrix(docs)
+    m <- as.matrix(dtm)
+    v <- sort(rowSums(m), decreasing = TRUE)
+    d <- data.frame(word = names(v), freq = v)
+    
+    set.seed(1234)
+    wordcloud(
+    words = d$word,
+    freq = d$freq,
+    min.freq = word_freq,
+    max.words = number_word,
+    random.order = FALSE,
+    rot.per = 0.35,
+    colors = brewer.pal(8, "Dark2"
+    )
+  )
+}
+#compute_wordcloud("Las Vegas", 4, "Restaurant", 5, 175, 30)
+```
+
+```{r}
+#Function returns a graph using City, Category, Attribute and star rating
+attribute_dependence <- function(cty, cat, attribute){
+  #Taking the dataset based on selected City and Category. 
+  filtered_business <- filter(business, tolower(city) == tolower(cty) & tolower(category) == tolower(cat))
+  filtered_business <- filter(filtered_business, !is.na(filtered_business[[attribute]]))
+  
+  #Plotting the graph with the selected attribute. using aes_string because it will take the value and consider standard evaluation for the value of the variable.
+  graph <- ggplot(filtered_business, aes_string(attribute, fill=attribute)) + geom_bar() 
+  
+  #Display the businesses based on star ratings
+  final_graph <- graph + facet_wrap(~ stars) + labs(x = attribute, y = "Number of Businesses", title = "Businesses Based On Star Ratings", fill=attribute)
+  
+  return (final_graph)
+}
+
+#attribute_dependence("Las Vegas", "Restaurant", "attributes.DogsAllowed")
+```
+
+```{r}
+TopCompetitors<- function(cat,cty,n)
+{
+check1<-transmute(checkin,business_id=business_id,Totalvisits=rowSums(checkin[, -22],na.rm = TRUE))
+Business<-merge(check1,business, by='business_id')
+
+#Businesses for category food
+Foodbusiness<-filter(Business,category == cat)
+
+#Removing rows with all NAs
+FB1<-Foodbusiness[, colSums(is.na(Foodbusiness)) != nrow(Foodbusiness)]
+
+
+#subsetting
+FB1<-select(FB1,business_id,Totalvisits,city,category,name,stars,review_count)
+
+filt_Business<-filter(FB1,city == cty)
+ a<-arrange(filt_Business,desc(stars),desc(Totalvisits))
+ a<-head(a,n=n)
+
+
+  
+a%>%
+ggplot(aes(x=name)) + geom_col(aes( y=Totalvisits) , position = "dodge",fill="Dark blue") +xlab('Businesses')+ylab('Total no. of checkins per day')+ggtitle("Performance by Top Competitors")+theme(
+axis.text.x = element_text(angle = 15, hjust = 1)
+) 
+}
+
+#TopCompetitors("Restaurant","Las Vegas", 10)
+```
+
+```{r}
+timeslot<-function(cty, star_rating)
+{
+  stars<-transmute(business,business_id=business_id,stars=stars)
+  business1<-transmute(business,business_id=business_id,city=city)
+  checkin_1<-merge(checkin,business1, by='business_id')
+  checkin_1<-merge(checkin_1,stars, by='business_id')
+  
+  checkin_1<-filter(checkin_1,city==cty & stars == star_rating)
+  checkin1 <- gather(checkin_1,Time,Freq,-business_id,na.rm = TRUE)
+  checkin1 <- separate(checkin1, Time, c("T1","DayTime"),sep=5)
+  
+  checkin2<- transmute(checkin1,Freq=Freq,business_id=business_id,DayTime=DayTime)
+  checkin3 <- separate(checkin2, DayTime, c("Day","Time"),sep="\\.")
+  checkin3<-transmute(checkin3,Day=factor(Day,levels=c("Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday")),Time=Time,Freq=Freq)
+  
+  
+  checkin4 <-summarise(group_by(checkin3, Day,Time),Freq=n() )
+  checkin4<-checkin4 %>% drop_na()
+
+  checkin4$Time = factor(checkin4$Time,levels=c("9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","0","1","2","3","4","5","6","7","8"))
+  checkin4%>%
+    ggplot() + geom_col(aes(x=Time, y=Freq, fill= Day) , position = "stack")+ scale_fill_brewer(palette="Set3")+xlab('Time Slots')+ylab('Count per day')+ggtitle("Checkins on Particular Day and Time.")+theme(
+      axis.text.x = element_text(angle = 45, hjust = 1))
+  
+}
+
+#timeslot("Las Vegas", 5)
+
+```
+
+
+```{r}
+library(shiny)
+library(dplyr)
+
+ui <- fluidPage(
+  titlePanel(title = "BIZWISE"),
+  sidebarLayout(
+      sidebarPanel(
+      selectInput(inputId = "city", label = strong("City"),
+                  choices = unique(business$city),
+                  selected = "Las Vegas"),
+        
+        selectInput(inputId = "category", label = strong("Category"),
+                  choices = unique(business$category),
+                  selected = "Restaurant"),
+        
+        sliderInput(inputId = "star", label = strong("Star Rating"),
+                  min = 1,
+                  max = 5,
+                  value = 5),
+        sliderInput(inputId = "top_n", label = strong("Top competitors"),
+                  min = 1,
+                  max = 50,
+                  value = 20),
+        sliderInput(inputId = "no_words", label = strong("Number of words"),
+                  min = 1,
+                  max = 200,
+                  value = 50),
+        sliderInput(inputId = "freq", label = strong("Frequency of words"),
+                  min = 1,
+                  max = 50,
+                  value = 5),
+        selectInput(inputId = "attribute", label = strong("Attributes"),
+                    choices = names(select(business, -business_id, -city, -longitude, -latitude, -postal_code, -category, -categories,
+                                           -state, -stars, -is_open, -hours.Thursday, -hours.Friday, -hours.Monday, -hours.Tuesday,
+                                           -hours.Wednesday, -hours.Saturday, -hours.Sunday, -name, -neighborhood, -review_count,
+                                           -address)),
+                    selected = "attributes.DogAllowed")
+      ),
+      mainPanel(
+        tabsetPanel(type = "tabs",
+                    tabPanel("Location-wise distribution",plotOutput("map", width = 1000, height = 1000)),
+                    tabPanel("Rating-wise distribution",plotOutput("graph", width = 1000, height = 1000)),
+                    tabPanel("Understanding customer reviews",plotOutput("wordcloud", width = 1000, height = 1000)),
+                    tabPanel("Top Competitors", plotOutput("topcompetitors", width = 1000, height = 1000)),
+                    tabPanel("Impact of Attribute", plotOutput("attribute_dependence", width = 1000, height = 1000)),
+                    tabPanel("Rush Hours", plotOutput("timeslot", width = 1000, height = 1000))
+        )
+      )
+    )
+  )
+
+  
+  
+server <- function(input,output) {
+      output$map <- renderPlot(
+        fun_map(input$city, input$category, input$star, input$top_n)
+        
+      )
+      output$graph <- renderPlot(
+         fun_graph_star_rating(input$city, input$category)
+      )
+      output$wordcloud <- renderPlot(
+        compute_wordcloud(input$city, input$star, input$category, input$freq, input$no_words, input$top_n)
+      )
+      output$topcompetitors <- renderPlot(
+        TopCompetitors(input$category, input$city, input$top_n)
+      )
+      output$attribute_dependence <- renderPlot(
+        attribute_dependence( input$city, input$category, input$attribute)
+      )
+      output$timeslot <- renderPlot(
+        timeslot(input$city, input$star)
+      )
+}
+
+shinyApp(ui = ui, server = server)
+```
